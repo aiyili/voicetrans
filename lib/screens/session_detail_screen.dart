@@ -20,7 +20,6 @@ class SessionDetailScreen extends StatefulWidget {
 
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   AudioPlayer? _player;
-  String? _audioPath;
   bool _audioReady = false;
 
   @override
@@ -47,7 +46,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
       setState(() {
         _player = player;
-        _audioPath = path;
         _audioReady = true;
       });
     } catch (_) {/* 音频不可用时仅展示文本 */}
@@ -94,17 +92,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    Session? session;
+    Session? found;
     for (final s in state.history) {
-      if (s.id == widget.sessionId) session = s;
+      if (s.id == widget.sessionId) found = s;
     }
 
-    if (session == null) {
+    if (found == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('记录详情')),
         body: const Center(child: Text('记录不存在或已删除')),
       );
     }
+    final session = found;
 
     final theme = Theme.of(context);
     final player = _player;
@@ -176,7 +175,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 : ListView.builder(
                     itemCount: session.segments.length,
                     itemBuilder: (context, i) => SegmentTile(
-                      segment: session!.segments[i],
+                      segment: session.segments[i],
                       showTranslation:
                           session.sourceLanguage.code != session.targetLanguage.code,
                     ),

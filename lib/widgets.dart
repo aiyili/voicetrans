@@ -64,9 +64,8 @@ class LanguageButton extends StatelessWidget {
     return OutlinedButton.icon(
       onPressed: enabled ? () => _showSheet(context) : null,
       icon: Text(lang.emoji, style: const TextStyle(fontSize: 18)),
-      label: Flexible(
-        child: Text(lang.label, overflow: TextOverflow.ellipsis),
-      ),
+      // OutlinedButton.icon 内部已用 Flexible 包裹 label，这里不能再套
+      label: Text(lang.label, maxLines: 1, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         minimumSize: const Size(0, 44),

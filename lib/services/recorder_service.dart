@@ -16,7 +16,6 @@ class RecorderService {
         encoder: AudioEncoder.aacLc,
         bitRate: 64000,
         sampleRate: 44100,
-        numOfChannels: 1,
       ),
       path: fullPath,
     );

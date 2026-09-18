@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_error.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:uuid/uuid.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -275,7 +275,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  void _onSttError(stt.SpeechRecognitionError error) {
+  void _onSttError(SpeechRecognitionError error) {
     if (_disposed || state != RecState.listening) return;
     if (error.permanent) {
       lastError = '语音识别出错：${error.errorMsg}';
@@ -291,7 +291,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
-  void _onResult(stt.SpeechRecognitionResult result) {
+  void _onResult(SpeechRecognitionResult result) {
     if (_disposed || state != RecState.listening) return;
     if (result.finalResult) {
       final text = result.recognizedWords.trim();
@@ -417,10 +417,10 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
-    if (lifecycleState == AppLifecycleState.resumed) {
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
       // 从后台回到前台时，识别会话可能已被系统中断，自动续听。
-      if (state == RecState.listening && !_stt.isListening) {
+      if (this.state == RecState.listening && !_stt.isListening) {
         _listen();
       }
     }
