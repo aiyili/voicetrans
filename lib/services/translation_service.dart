@@ -29,7 +29,8 @@ class TranslationService {
       downloaded = await _modelManager.isModelDownloaded(lang.bcpCode);
     } catch (_) {/* 部分平台查询失败时直接尝试下载 */}
     if (!downloaded) {
-      await _modelManager.downloadModel(lang.bcpCode);
+      // 允许移动数据下载（约 30MB/语言），否则非 WiFi 环境首次使用会失败
+      await _modelManager.downloadModel(lang.bcpCode, isWifiRequired: false);
     }
   }
 
@@ -52,7 +53,7 @@ class TranslationService {
   }
 
   Future<void> downloadModel(LanguageOption lang) async {
-    await _modelManager.downloadModel(lang.bcpCode);
+    await _modelManager.downloadModel(lang.bcpCode, isWifiRequired: false);
   }
 
   Future<void> deleteModel(LanguageOption lang) async {
