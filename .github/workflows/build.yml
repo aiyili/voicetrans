@@ -41,42 +41,8 @@ jobs:
           name: voicetrans-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
-  ios-test:
-    name: iOS Simulator Test
-    # macos-26 提供 Xcode 17 + iOS 26 模拟器；ML Kit 0.15+ 的二进制
-    # 自 iOS 26 起才包含 Apple Silicon 模拟器架构
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Pub get
-        run: flutter pub get
-
-      - name: Boot iPhone simulator
-        run: |
-          UDID=$(xcrun simctl list devices available | grep "iPhone" | head -1 | grep -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
-          echo "UDID=$UDID" >> "$GITHUB_ENV"
-          xcrun simctl bootstatus "$UDID" -b
-
-      - name: Run integration test on simulator
-        run: flutter test integration_test/app_test.dart -d "$UDID"
-
-      - name: Simulator screenshot (artifact)
-        if: always()
-        run: |
-          xcrun simctl io "$UDID" screenshot /tmp/ios_home.png || true
-          mkdir -p artifacts && cp /tmp/ios_home.png artifacts/ 2>/dev/null || true
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: voicetrans-ios-test-screenshot
-          path: artifacts/
+  # 说明：Google ML Kit 的 iOS 二进制不含模拟器架构（官方仅支持真机），
+  # 故不做 iOS 模拟器测试；iOS 验证以真机构建（下方 ios 任务）+ 真机侧载为准。
 
   ios:
     name: iOS (unsigned IPA)
