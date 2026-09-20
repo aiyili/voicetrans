@@ -12,8 +12,7 @@ dependencies:
   provider: ^6.1.2
   speech_to_text: ^7.5.0
   record: ^7.1.1
-  # 锁定 0.13.x：0.14+ 的 Android Kotlin 重写在 AGP8 下会静默丢失插件类（MissingPluginException）
-  google_mlkit_translation: ^0.13.1
+  google_mlkit_translation: ^0.15.1
   shared_preferences: ^2.3.2
   path_provider: ^2.1.5
   just_audio: ^0.10.2
