@@ -41,6 +41,41 @@ jobs:
           name: voicetrans-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
+  ios-test:
+    name: iOS Simulator Test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Boot iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available | grep "iPhone" | head -1 | grep -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Run integration test on simulator
+        run: flutter test integration_test/app_test.dart -d "$UDID"
+
+      - name: Simulator screenshot (artifact)
+        if: always()
+        run: |
+          xcrun simctl io "$UDID" screenshot /tmp/ios_home.png || true
+          mkdir -p artifacts && cp /tmp/ios_home.png artifacts/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: voicetrans-ios-test-screenshot
+          path: artifacts/
+
   ios:
     name: iOS (unsigned IPA)
     if: startsWith(github.ref, 'refs/tags/')
