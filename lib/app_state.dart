@@ -163,7 +163,11 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       if (!sameLanguage) {
         statusHint = '正在准备离线翻译模型（首次约需 30MB/语言）…';
         notifyListeners();
-        await _translator.ensureModels(sourceLang, targetLang);
+        try {
+          await _translator.ensureModels(sourceLang, targetLang);
+        } catch (_) {
+          // 模型暂不可用不阻塞识别：翻译器会在翻译每句时自行重试下载
+        }
       }
 
       String? audioFile;

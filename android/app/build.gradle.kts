@@ -31,6 +31,10 @@ android {
 
     buildTypes {
         release {
+            // 必须：关闭 R8 压缩。ML Kit 等闭源 AAR 依赖反射初始化，
+            // 被 R8 裁剪后在运行时抛 NullPointerException
+            isMinifyEnabled = false
+            isShrinkResources = false
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
