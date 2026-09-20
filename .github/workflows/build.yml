@@ -43,7 +43,9 @@ jobs:
 
   ios-test:
     name: iOS Simulator Test
-    runs-on: macos-15
+    # macos-26 提供 Xcode 17 + iOS 26 模拟器；ML Kit 0.15+ 的二进制
+    # 自 iOS 26 起才包含 Apple Silicon 模拟器架构
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
