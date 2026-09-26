@@ -1,7 +1,7 @@
 name: voicetrans
 description: "声译通 VoiceTrans —— 长时间录音 + 实时语音识别与离线翻译（免费、无账号、翻译本地运行）"
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.5+5
 
 environment:
   sdk: ^3.5.0

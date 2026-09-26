@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
@@ -55,9 +56,11 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
   DateTime? _sessionStart;
   Timer? _ticker;
-  Timer? _errorRestartTimer;
+  Timer? _restartTimer;
   DateTime _lastRestart = DateTime.fromMillisecondsSinceEpoch(0);
   int _restartCount = 0;
+  int _restartSeq = 0;
+  int _busyStreak = 0;
   int _partialSeq = 0;
   bool _disposed = false;
 
@@ -97,7 +100,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
-    _errorRestartTimer?.cancel();
+    _restartTimer?.cancel();
     _translator.dispose();
     _recorder.dispose();
     super.dispose();
@@ -191,13 +194,18 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
       _sessionStart = DateTime.now();
       _restartCount = 0;
+      _busyStreak = 0;
       state = RecState.listening;
       statusHint = '';
       notifyListeners();
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!_disposed) notifyListeners();
       });
-      _listen();
+      // 先 cancel 清掉可能残留的识别会话（上次崩溃/其他应用占用），避免 ERROR_RECOGNIZER_BUSY
+      try {
+        _stt.cancel();
+      } catch (_) {}
+      _scheduleRestart();
     } catch (e) {
       state = RecState.idle;
       statusHint = '';
@@ -218,6 +226,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// 直接发起一次识别（仅在确定没有活动会话时使用；常规路径走 [_scheduleRestart]）。
   void _listen() {
     if (_disposed || state != RecState.listening) return;
     _stt.listen(
@@ -230,13 +239,70 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
+  /// 统一的重启调度：先 cancel 释放上一个会话，防抖延迟后再发起新识别。
+  /// Android 静音数秒、iOS 约一分钟会结束单次识别会话，这里自动续听实现长时间连续识别。
+  ///
+  /// 插件 Android 实现把所有错误标记为 permanent，因此瞬态错误（busy/no_match/
+  /// speech_timeout 等）也经由 [_onSttError] 走到这里：静默重启即可，busy 用指数退避。
+  void _scheduleRestart({bool busy = false}) {
+    if (_disposed || state != RecState.listening) return;
+    if (_stt.isListening) {
+      _busyStreak = 0;
+      return;
+    }
+
+    _restartSeq++;
+    final seq = _restartSeq;
+    if (busy) {
+      _busyStreak++;
+      if (_busyStreak > 8) {
+        lastError = '识别服务持续繁忙（error_busy）：请稍后重试，或在设置中关闭"同时保存录音"再试';
+        stop();
+        return;
+      }
+    } else {
+      _busyStreak = 0;
+    }
+
+    final now = DateTime.now();
+    if (now.difference(_lastRestart).inMilliseconds > 20000) {
+      _restartCount = 0;
+    }
+    _lastRestart = now;
+    _restartCount++;
+    if (_restartCount > 300) {
+      // 保险丝：识别会话在极短时间内被系统反复结束（非正常静音节奏），放弃以免耗电。
+      lastError = '识别服务频繁中断，已停止。请稍后重试。';
+      stop();
+      return;
+    }
+
+    final delay = busy
+        ? Duration(
+            milliseconds:
+                (250 * math.pow(1.6, _busyStreak)).clamp(250, 5000).toInt())
+        : const Duration(milliseconds: 200);
+    _restartTimer?.cancel();
+    _restartTimer = Timer(delay, () async {
+      if (_disposed || state != RecState.listening || seq != _restartSeq) return;
+      if (_stt.isListening) return;
+      try {
+        _stt.cancel();
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      if (_disposed || state != RecState.listening || seq != _restartSeq) return;
+      if (_stt.isListening) return;
+      _listen();
+    });
+  }
+
   Future<void> stop() async {
     if (state == RecState.idle) return;
     state = RecState.idle;
     statusHint = '';
     _ticker?.cancel();
     _ticker = null;
-    _errorRestartTimer?.cancel();
+    _restartTimer?.cancel();
     try {
       _stt.stop();
     } catch (_) {}
@@ -258,41 +324,47 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
   // ---------------------------------------------------------------- stt callbacks
 
+  /// 插件 Android 实现将所有错误都标记为 permanent（写死 true），不能采信；
+  /// 真正致命、无法靠重试恢复的错误只有下面这些。
+  static const _fatalSttErrors = {
+    'error_permission',
+    'error_not_initialized',
+    'error_language_not_supported',
+    'error_language_unavailable',
+  };
+
+  static String _friendlySttError(String msg) {
+    switch (msg) {
+      case 'error_permission':
+        return '没有麦克风/语音识别权限，请在系统设置中授权';
+      case 'error_not_initialized':
+        return '语音识别初始化失败，请重试';
+      case 'error_language_not_supported':
+      case 'error_language_unavailable':
+        return '当前识别语言在此设备上不可用';
+      default:
+        return '语音识别出错：$msg';
+    }
+  }
+
   void _onSttStatus(String status) {
     if (_disposed || state != RecState.listening) return;
-    // Android 静音数秒、iOS 约一分钟后会话会被系统结束，这里自动重启实现长时间连续识别。
+    // 会话被系统结束（Android 静音数秒、iOS 约一分钟）后自动续听。
     if (status == 'notListening' || status == 'done') {
-      if (!_stt.isListening) {
-        final now = DateTime.now();
-        if (now.difference(_lastRestart).inMilliseconds > 20000) {
-          _restartCount = 0;
-        }
-        _lastRestart = now;
-        _restartCount++;
-        if (_restartCount > 60) {
-          lastError = '识别服务频繁中断，已停止。请稍后重试。';
-          stop();
-          return;
-        }
-        _listen();
-      }
+      _scheduleRestart();
     }
   }
 
   void _onSttError(SpeechRecognitionError error) {
     if (_disposed || state != RecState.listening) return;
-    if (error.permanent) {
-      lastError = '语音识别出错：${error.errorMsg}';
+    if (_fatalSttErrors.contains(error.errorMsg)) {
+      lastError = _friendlySttError(error.errorMsg);
       stop();
       return;
     }
-    // 临时错误（如 no-speech）：稍后自动重启。
-    _errorRestartTimer?.cancel();
-    _errorRestartTimer = Timer(const Duration(milliseconds: 500), () {
-      if (!_disposed && state == RecState.listening && !_stt.isListening) {
-        _listen();
-      }
-    });
+    // 瞬态错误（busy / no_match / speech_timeout / client / network 等）：
+    // 静默退避重启。安静场景下系统会周期性发 no_match / speech_timeout，属正常节奏。
+    _scheduleRestart(busy: error.errorMsg == 'error_busy');
   }
 
   void _onResult(SpeechRecognitionResult result) {
@@ -424,8 +496,8 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // 从后台回到前台时，识别会话可能已被系统中断，自动续听。
-      if (this.state == RecState.listening && !_stt.isListening) {
-        _listen();
+      if (this.state == RecState.listening) {
+        _scheduleRestart();
       }
     }
   }
